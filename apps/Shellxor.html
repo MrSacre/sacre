@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shellcode XOR Encoder</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      font-size: 13px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    input[type="text"], select {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    input[type="text"] {
+      width: 200px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+    #encodeBtn {
+      background: #22c55e;
+      color: #022c22;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    .small {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .error {
+      color: #fca5a5;
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    .badge {
+      display: inline-block;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      margin-left: 6px;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Shellcode XOR Encoder<span class="badge">client-side only</span></h1>
+    <p class="small">
+      Paste your shellcode below. The tool automatically detects bytes
+      in <code>\xNN</code> or <code>0xNN</code> format and XORs them with the provided key.
+      No external requests or clipboard access are used.
+    </p>
+
+    <label for="inputShellcode">Input shellcode</label>
+    <textarea id="inputShellcode" spellcheck="false" placeholder='Example:
+
+buf =  b""
+buf += b"\xfc\x48\x83\xe4..."
+...'></textarea>
+
+    <div class="row">
+      <div>
+        <label for="key">XOR key</label>
+        <input id="key" type="text" placeholder="e.g. \x2a or 0x2a or 2a">
+        <div class="small">Hex (0xNN / \xNN / NN)</div>
+      </div>
+      <div>
+        <button id="encodeBtn">Encode</button>
+      </div>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <label for="outputShellcode">Encoded shellcode (same format)</label>
+    <textarea id="outputShellcode" spellcheck="false" placeholder="Result will appear here..." readonly></textarea>
+
+    <label for="decoderSelect">Decoder</label>
+    <div class="row">
+      <select id="decoderSelect">
+        <option value="">— Choose language —</option>
+      </select>
+    </div>
+
+    <label for="decoderCode">Code du décodeur sélectionné</label>
+    <textarea id="decoderCode" spellcheck="false" placeholder="The decoder code will appear here..." readonly></textarea>
+  </div>
+
+  <script src="Shellxor_data.js"></script>
+
+  <!-- Puis le script principal qui utilise `decoders` -->
+  <script>
+    function parseKey(keyStr) {
+      keyStr = keyStr.trim();
+      if (!keyStr) {
+        throw new Error("Please provide an XOR key (hex).");
+      }
+
+      let hexPart = null;
+
+      if (/^0x[0-9a-fA-F]{2}$/.test(keyStr)) {
+        hexPart = keyStr.slice(2); // remove "0x"
+      }
+      else if (/^\\x[0-9a-fA-F]{2}$/.test(keyStr)) {
+        hexPart = keyStr.slice(2); // remove "\x"
+      }
+      else if (/^[0-9a-fA-F]{2}$/.test(keyStr)) {
+        hexPart = keyStr;
+      } else {
+        throw new Error("Invalid key format. Use hex byte: 0xaa, \\xaa, or aa.");
+      }
+
+      const key = parseInt(hexPart, 16);
+
+      if (isNaN(key) || key < 0 || key > 255) {
+        throw new Error("The key must be a single hex byte between 00 and FF.");
+      }
+
+      return key;
+    }
+
+    function xorShellcode(text, key) {
+      const regex = /(\\x[0-9a-fA-F]{2})|(\b0x[0-9a-fA-F]{2}\b)/g;
+
+      return text.replace(regex, (match) => {
+        let prefix, hexStr;
+
+        if (match.startsWith("\\x")) {
+          prefix = "\\x";
+          hexStr = match.slice(2);
+        } else if (match.toLowerCase().startsWith("0x")) {
+          prefix = "0x";
+          hexStr = match.slice(2);
+        } else {
+          return match;
+        }
+
+        const value = parseInt(hexStr, 16);
+        if (isNaN(value)) {
+          return match;
+        }
+
+        const xored = (value ^ key) & 0xff;
+        const newHex = xored.toString(16).padStart(2, "0");
+
+        return prefix + newHex;
+      });
+    }
+
+    // Remplir dynamiquement la liste des décodeurs depuis `decoders` (Shellxor_data)
+    function populateDecoderSelect() {
+      const select = document.getElementById("decoderSelect");
+      // on laisse la première option "— Choisir —"
+      Object.entries(decoders).forEach(([key, value]) => {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = value.label || key;
+        select.appendChild(opt);
+      });
+    }
+
+    document.getElementById("encodeBtn").addEventListener("click", () => {
+      const input = document.getElementById("inputShellcode").value;
+      const keyStr = document.getElementById("key").value;
+      const errorEl = document.getElementById("error");
+      const outputEl = document.getElementById("outputShellcode");
+
+      errorEl.textContent = "";
+      outputEl.value = "";
+
+      try {
+        const key = parseKey(keyStr);
+        const result = xorShellcode(input, key);
+        outputEl.value = result;
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    });
+
+    // Gestion du select de décodeur
+    document.getElementById("decoderSelect").addEventListener("change", (e) => {
+      const id = e.target.value;
+      const decoderTextArea = document.getElementById("decoderCode");
+
+      if (!id || !decoders[id]) {
+        decoderTextArea.value = "";
+        return;
+      }
+
+      decoderTextArea.value = decoders[id].content;
+    });
+
+    // Remplir le select au chargement de la page
+    window.addEventListener("DOMContentLoaded", populateDecoderSelect);
+  </script>
+</body>
+</html>

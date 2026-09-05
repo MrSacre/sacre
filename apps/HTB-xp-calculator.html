@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTB XP Calculator</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    background: #0a0e12;
+    color: #c5d0db;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  .page-layout { display: flex; gap: 24px; max-width: 1200px; margin: 0 auto; align-items: flex-start; }
+  .left-panel { flex: 1; min-width: 0; max-width: 680px; }
+  .right-panel { width: 420px; flex-shrink: 0; position: sticky; top: 24px; }
+
+  h1 { font-size: 22px; font-weight: 700; color: #9fef00; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { font-size: 12px; color: #4a5a6a; margin-bottom: 20px; }
+  .controls {
+    display: flex; gap: 20px; align-items: center; margin-bottom: 20px;
+    background: #111920; padding: 14px 18px; border-radius: 8px;
+    border: 1px solid #1a2a3a; flex-wrap: wrap;
+  }
+  .control-group { display: flex; align-items: center; gap: 8px; }
+  .control-group label { font-size: 13px; color: #6a7a8a; }
+  .separator { color: #3a4a5a; font-size: 18px; }
+  .divider { border-left: 1px solid #1a2a3a; padding-left: 20px; }
+  input[type=number] {
+    background: #151c24; border: 1px solid #2a3a4a; color: #9fef00;
+    font-family: inherit; font-size: 16px; width: 64px;
+    padding: 6px 8px; border-radius: 4px; text-align: center;
+  }
+  input[type=number]:focus { outline: 1px solid #9fef00; }
+  input[type=number].wide { width: 96px; }
+  .progress-row { margin-top: -12px; }
+  .hint { font-size: 12px; color: #4a5a6a; }
+  .xp-result { margin-left: auto; text-align: right; }
+  .xp-result-label { font-size: 11px; color: #5a6a7a; text-transform: uppercase; letter-spacing: 1px; }
+  .xp-result-value { font-size: 22px; font-weight: 700; color: #9fef00; }
+  .scroll-area {
+    max-height: 520px; overflow: auto;
+    border: 1px solid #1a2a3a; border-radius: 6px;
+  }
+  .scroll-area::-webkit-scrollbar { width: 6px; }
+  .scroll-area::-webkit-scrollbar-track { background: #0a0e12; }
+  .scroll-area::-webkit-scrollbar-thumb { background: #2a3a4a; border-radius: 3px; }
+  .header-row, .xp-row {
+    display: grid; grid-template-columns: 60px minmax(80px, 1fr) 120px 140px;
+    min-width: 440px;
+    align-items: center; padding: 6px 12px;
+  }
+  .header-row {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: #4a5a6a; border-bottom: 2px solid #1a2a3a;
+    position: sticky; top: 0; background: #0a0e12; z-index: 2; padding: 8px 12px;
+  }
+  .xp-row { font-size: 13px; border-bottom: 1px solid #141c25; transition: background 0.15s; }
+  .xp-row:hover { background: #141c25; }
+  .xp-row.current { background: #1a2332; border-left: 3px solid #9fef00; }
+  .xp-row.target { background: #1a2332; border-left: 3px solid #ff3e3e; }
+  .xp-row.in-range { background: #111920; }
+  .lvl { color: #5a6a7a; font-weight: 600; }
+  .current .lvl, .target .lvl { color: #fff; font-weight: 700; }
+  .bar-container { height: 18px; background: #141c25; border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .xp-val { text-align: right; font-size: 12px; color: #6a7a8a; }
+  .xp-cumul { text-align: right; font-size: 12px; color: #4a5a6a; }
+  .header-row span:nth-child(3),
+  .header-row span:nth-child(4) { text-align: right; }
+  .btn-scroll {
+    background: #151c24; border: 1px solid #2a3a4a; color: #9fef00;
+    font-family: inherit; font-size: 12px; padding: 6px 14px;
+    border-radius: 4px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-scroll:hover { background: #1a2a3a; border-color: #9fef00; }
+
+  /* Right panel */
+  .breakdown-card {
+    background: #111920; border: 1px solid #1a2a3a; border-radius: 8px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .breakdown-card h2 {
+    font-size: 15px; font-weight: 800; color: #9fef00; margin-bottom: 14px;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    border-bottom: 1px solid #1f3320; padding-bottom: 8px;
+  }
+  .breakdown-card h3 {
+    font-size: 12px; font-weight: 700; color: #7ab800; margin: 16px 0 6px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .breakdown-card h3:first-of-type { margin-top: 0; }
+  .bd-row {
+    display: grid; grid-template-columns: 1fr 60px 60px;
+    padding: 4px 0; font-size: 12px; border-bottom: 1px solid #141c25;
+    align-items: center;
+  }
+  .bd-row:last-child { border-bottom: none; }
+  .bd-label { color: #6a7a8a; }
+  .bd-xp { color: #4a5a6a; text-align: right; }
+  .bd-count { color: #9fef00; text-align: right; font-weight: 700; }
+  .bd-header {
+    display: grid; grid-template-columns: 1fr 60px 60px;
+    padding: 4px 0 6px; font-size: 10px; color: #3a4a5a;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid #1a2a3a; margin-bottom: 4px;
+  }
+  .bd-header span:nth-child(2),
+  .bd-header span:nth-child(3) { text-align: right; }
+  .active-toggle {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+    font-size: 12px; color: #6a7a8a;
+  }
+  .active-toggle input[type=checkbox] { accent-color: #9fef00; width: 16px; height: 16px; }
+  .tasks-control {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    font-size: 11px; color: #5a6a7a;
+  }
+  .tasks-control input[type=number] {
+    font-size: 12px; width: 48px; padding: 3px 4px;
+  }
+  .active-label { color: #9fef00; font-weight: 600; }
+  .xp-needed-header {
+    font-size: 11px; color: #5a6a7a; text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .xp-needed-big {
+    font-size: 28px; font-weight: 700; color: #9fef00; margin-bottom: 16px;
+  }
+
+  .xp-val, .xp-cumul, .xp-result-value, .xp-needed-big { overflow-wrap: anywhere; }
+  .control-group, .tasks-control { flex-wrap: wrap; }
+
+  @media (max-width: 1100px) {
+    .page-layout { flex-direction: column; }
+    .left-panel { max-width: 100%; width: 100%; }
+    .right-panel { width: 100%; position: static; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-layout">
+  <div class="left-panel">
+    <h1>HTB XP Calculator</h1>
+    <p class="subtitle">nextLevel(L) = ⌊150 · (L−1)<sup>(1.2 + (L−1)/100 · 0.35)</sup>⌋</p>
+
+    <div class="controls">
+      <div class="control-group">
+        <label for="current">Current</label>
+        <input type="number" id="current" min="0" value="0">
+      </div>
+      <span class="separator">→</span>
+      <div class="control-group">
+        <label for="target">Target</label>
+        <input type="number" id="target" min="1" value="106">
+      </div>
+      <div class="control-group divider">
+        <label for="maxlvl">Max Lvl</label>
+        <input type="number" id="maxlvl" min="1" max="500" value="106">
+      </div>
+      <div class="xp-result">
+        <div class="xp-result-label">XP Needed</div>
+        <div class="xp-result-value" id="xpNeeded">0</div>
+      </div>
+    </div>
+
+    <div class="controls progress-row">
+      <div class="control-group">
+        <label for="progress">XP déjà acquis au niveau <span id="progLevel">0</span></label>
+        <input type="number" id="progress" min="0" value="0" class="wide">
+        <span class="hint" id="progHint"></span>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn-scroll" onclick="scrollToCurrent()">⤓ Scroll to current</button>
+    </div>
+    <div class="scroll-area" id="tableArea"></div>
+  </div>
+
+  <div class="right-panel">
+    <div class="breakdown-card">
+      <div class="xp-needed-header">XP Needed</div>
+      <div class="xp-needed-big" id="xpNeeded2">—</div>
+
+      <div class="active-toggle">
+        <input type="checkbox" id="activeToggle">
+        <label for="activeToggle">Active Labs <span class="active-label">(×1.3)</span></label>
+      </div>
+
+      <h2>HTB Labs</h2>
+
+      <h3>Machines</h3>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="machineRows"></div>
+
+      <h3>Sherlocks</h3>
+      <div class="tasks-control">
+        <label for="tasksPerSherlock">Tasks / Sherlock</label>
+        <input type="number" id="tasksPerSherlock" min="1" max="99" value="8">
+      </div>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="sherlockRows"></div>
+
+      <h3>Challenges</h3>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="challengeRows"></div>
+    </div>
+
+    <div class="breakdown-card">
+      <h2>HTB Academy</h2>
+
+      <h3>Modules (per section)</h3>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="sectionRows"></div>
+
+      <h3>Modules (per question)</h3>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="questionRows"></div>
+
+      <h3>Path completion</h3>
+      <div class="bd-header">
+        <span>Difficulty</span><span>XP</span><span>Count</span>
+      </div>
+      <div id="pathRows"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'htb_xp_settings';
+
+// XP tables from the HTB XP System documentation
+// https://help.hackthebox.com/en/articles/14689014-hack-the-box-xp-system
+const XP_MACHINES = [
+  { label: 'Starting Point', user: 100, root: 150 },
+  { label: 'Easy',           user: 200, root: 250 },
+  { label: 'Medium',         user: 300, root: 350 },
+  { label: 'Hard',           user: 400, root: 450 },
+  { label: 'Insane',         user: 500, root: 550 },
+];
+// Sherlocks: XP per task + a one-off bonus when the whole Sherlock is completed
+const XP_SHERLOCKS = [
+  { label: 'Very Easy', task: 15, bonus: 75 },
+  { label: 'Easy',      task: 20, bonus: 175 },
+  { label: 'Medium',    task: 30, bonus: 250 },
+  { label: 'Hard',      task: 40, bonus: 325 },
+  { label: 'Insane',    task: 50, bonus: 400 },
+];
+const XP_CHALLENGES = [
+  { label: 'Very Easy', xp: 100 },
+  { label: 'Easy',      xp: 200 },
+  { label: 'Medium',    xp: 300 },
+  { label: 'Hard',      xp: 400 },
+  { label: 'Insane',    xp: 500 },
+];
+const XP_SECTIONS = [
+  { label: 'Fundamental', xp: 10 },
+  { label: 'Easy',        xp: 15 },
+  { label: 'Medium',      xp: 20 },
+  { label: 'Hard',        xp: 40 },
+];
+const XP_QUESTIONS = [
+  { label: 'Fundamental', xp: 20 },
+  { label: 'Easy',        xp: 30 },
+  { label: 'Medium',      xp: 40 },
+  { label: 'Hard',        xp: 60 },
+];
+const XP_PATHS = [
+  { label: 'Easy',   xp: 300 },
+  { label: 'Medium', xp: 500 },
+  { label: 'Hard',   xp: 1000 },
+];
+
+function saveSettings() {
+  const settings = {
+    current: document.getElementById('current').value,
+    target: document.getElementById('target').value,
+    maxlvl: document.getElementById('maxlvl').value,
+    active: document.getElementById('activeToggle').checked,
+    tasks: document.getElementById('tasksPerSherlock').value,
+    progress: document.getElementById('progress').value
+  };
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch(e) {}
+}
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved) {
+      document.getElementById('current').value = saved.current ?? 0;
+      document.getElementById('target').value = saved.target ?? 106;
+      document.getElementById('maxlvl').value = saved.maxlvl ?? 106;
+      document.getElementById('activeToggle').checked = saved.active ?? false;
+      document.getElementById('tasksPerSherlock').value = saved.tasks ?? 8;
+      document.getElementById('progress').value = saved.progress ?? 0;
+    }
+  } catch(e) {}
+}
+
+function totalXP(level) {
+  const adjLevel = level - 1;
+  if (adjLevel <= 0) return 0;
+  const exponent = 1.2 + (adjLevel / 100) * 0.35;
+  return Math.floor(150 * Math.pow(adjLevel, exponent));
+}
+
+function xpForLevel(l) {
+  if (l === 0) return 150;
+  return totalXP(l + 1) - totalXP(l);
+}
+
+function buildBreakdownRows(container, items, needed, mult, showUserRoot) {
+  let html = '';
+  for (const item of items) {
+    if (showUserRoot) {
+      const totalXp = Math.floor((item.user + item.root) * mult);
+      const count = needed > 0 ? Math.ceil(needed / totalXp) : 0;
+      html += `<div class="bd-row">
+        <span class="bd-label">${item.label}</span>
+        <span class="bd-xp">${item.user}+${item.root}</span>
+        <span class="bd-count">${count}</span>
+      </div>`;
+    } else {
+      const xp = Math.floor(item.xp * mult);
+      const count = needed > 0 ? Math.ceil(needed / xp) : 0;
+      html += `<div class="bd-row">
+        <span class="bd-label">${item.label}</span>
+        <span class="bd-xp">${item.xp}</span>
+        <span class="bd-count">${count}</span>
+      </div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+
+function buildSherlockRows(container, needed, mult, tasks) {
+  let html = '';
+  for (const item of XP_SHERLOCKS) {
+    const totalXp = Math.floor((item.task * tasks + item.bonus) * mult);
+    const count = needed > 0 ? Math.ceil(needed / totalXp) : 0;
+    html += `<div class="bd-row">
+      <span class="bd-label">${item.label}</span>
+      <span class="bd-xp">${totalXp}</span>
+      <span class="bd-count">${count}</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderBreakdown(needed) {
+  const active = document.getElementById('activeToggle').checked;
+  const mult = active ? 1.3 : 1;
+  const tasks = Math.max(1, parseInt(document.getElementById('tasksPerSherlock').value) || 1);
+
+  document.getElementById('xpNeeded2').textContent = needed > 0 ? needed.toLocaleString() : '—';
+
+  buildBreakdownRows(document.getElementById('machineRows'), XP_MACHINES, needed, mult, true);
+  buildSherlockRows(document.getElementById('sherlockRows'), needed, mult, tasks);
+  buildBreakdownRows(document.getElementById('challengeRows'), XP_CHALLENGES, needed, mult, false);
+  // Academy has no active multiplier
+  buildBreakdownRows(document.getElementById('sectionRows'), XP_SECTIONS, needed, 1, false);
+  buildBreakdownRows(document.getElementById('questionRows'), XP_QUESTIONS, needed, 1, false);
+  buildBreakdownRows(document.getElementById('pathRows'), XP_PATHS, needed, 1, false);
+}
+
+function render() {
+  const maxLvl = Math.max(1, parseInt(document.getElementById('maxlvl').value) || 100);
+  const current = parseInt(document.getElementById('current').value);
+  const target = parseInt(document.getElementById('target').value);
+
+  const validCurrent = !isNaN(current) && current >= 0 && current < maxLvl;
+  const validTarget = !isNaN(target) && target > current && target <= maxLvl;
+  const valid = validCurrent && validTarget;
+
+  const data = [];
+  let cumul = 0;
+  for (let l = 0; l <= maxLvl; l++) {
+    const xp = xpForLevel(l);
+    data.push({ level: l, xpToNext: xp, xpCumul: cumul });
+    cumul += xp;
+  }
+
+  // XP already earned inside the current level, capped at what that level requires
+  const currentLevelXp = validCurrent ? data[current].xpToNext : 0;
+  const rawProgress = parseInt(document.getElementById('progress').value);
+  const progress = Math.min(Math.max(rawProgress || 0, 0), currentLevelXp);
+
+  document.getElementById('progLevel').textContent = validCurrent ? current : '—';
+  document.getElementById('progHint').textContent =
+    validCurrent ? `/ ${currentLevelXp.toLocaleString()}` : '';
+  document.getElementById('progress').max = currentLevelXp;
+
+  let needed = 0;
+  if (valid) {
+    for (let l = current; l < target; l++) needed += data[l].xpToNext;
+    needed = Math.max(0, needed - progress);
+    document.getElementById('xpNeeded').textContent = needed.toLocaleString();
+  } else {
+    document.getElementById('xpNeeded').textContent = '—';
+  }
+
+  renderBreakdown(needed);
+
+  const maxXp = data[data.length - 1].xpToNext;
+  let html = `<div class="header-row">
+    <span>Level</span><span>XP Bar</span><span>Level Up</span><span>Cumulé</span>
+  </div>`;
+
+  for (const d of data) {
+    const pct = (d.xpToNext / maxXp) * 100;
+    const isCurrent = valid && d.level === current;
+    const isTarget = valid && d.level === target;
+    const inRange = valid && d.level > current && d.level < target;
+
+    let cls = 'xp-row';
+    if (isCurrent) cls += ' current" id="currentRow';
+    else if (isTarget) cls += ' target';
+    else if (inRange) cls += ' in-range';
+
+    let barColor = '#2a3a4a';
+    if (isCurrent) barColor = '#9fef00';
+    else if (isTarget) barColor = '#ff3e3e';
+    else if (inRange) barColor = '#3a5a3a';
+
+    html += `<div class="${cls}">
+      <span class="lvl">${d.level}</span>
+      <div class="bar-container"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      <span class="xp-val">${d.xpToNext.toLocaleString()}</span>
+      <span class="xp-cumul">${d.xpCumul.toLocaleString()}</span>
+    </div>`;
+  }
+
+  document.getElementById('tableArea').innerHTML = html;
+}
+
+function scrollToCurrent() {
+  const row = document.getElementById('currentRow');
+  if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function update() { render(); saveSettings(); }
+
+document.getElementById('current').addEventListener('input', update);
+document.getElementById('target').addEventListener('input', update);
+document.getElementById('maxlvl').addEventListener('input', update);
+document.getElementById('activeToggle').addEventListener('change', update);
+document.getElementById('tasksPerSherlock').addEventListener('input', update);
+document.getElementById('progress').addEventListener('input', update);
+
+loadSettings();
+render();
+scrollToCurrent();
+</script>
+
+</body>
+</html>
